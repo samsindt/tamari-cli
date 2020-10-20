@@ -1,6 +1,10 @@
 use std::env;
 use std::io::{self, Write};
 use clap::{Arg, App, SubCommand};
+use std::net::{TcpStream};
+use std::process;
+
+use tamari;
 
 fn main() {
     let matches = App::new("tamari-cli")
@@ -15,21 +19,25 @@ fn main() {
                             .takes_value(true))
                         .arg(Arg::with_name("address")
                             .short("a")
+                            .long("address")
                             .help("Sets the server address")
                             .value_name("address")
                             .takes_value(true))
                         .arg(Arg::with_name("port")
                             .short("p")
+                            .long("port")
                             .help("Sets the server port")
                             .value_name("port")
                             .takes_value(true))
                         .arg(Arg::with_name("password")
                             .short("w")
+                            .long("password")
                             .help("Sets the password to be sent to the server")
                             .value_name("password")
                             .takes_value(true))
                         .arg(Arg::with_name("verbose")
                             .short("v")
+                            .long("verbose")
                             .multiple(true)
                             .help("Sets output to verbose"))
                         .subcommand(SubCommand::with_name("set")
@@ -55,9 +63,85 @@ fn main() {
                                         .help("the key to delete")))       
                         .get_matches();
 
-    // check for address, port, and password flags
-    // open tcp connection
+    // check for verbose flag
+    let verbose = matches.is_present("verbose");
+    println!("Verbose {}", verbose);
+
+    // check for address
+    let address = match matches.value_of("address") {
+        Some(adr) => String::from(adr),
+        None => match env::var("TAMARI_CLI_ADDRESS") {
+            Ok(adr) => adr,
+            Err(_) => String::from("127.0.0.1"),
+        },
+    };
+
+    println!("Address {}", address);
+
+    // check for port
+    let port_str = match matches.value_of("port") {
+        Some(pt) => String::from(pt),
+        None => match env::var("TAMARI_CLI_PORT") {
+            Ok(pt) => pt,
+            Err(_) => String::from("8080"),
+        },
+    };
+
+    let port: u16;
+    if let Ok(pt) = port_str.parse::<u16>() {
+        port = pt;
+    } else {
+        // standardize this level of error handling
+        eprintln!("Invalid port");
+        process::exit(-1);
+    };
+
+    println!("Port {}", port);
+
+    // check for password 
+    let password = match matches.value_of("password") {
+        Some(pw) => String::from(pw),
+        None => match env::var("TAMARI_CLI_PASSWORD") {
+            Ok(pw) => pw,
+            Err(_) => String::new(),
+        },
+    };
+
+    println!("Password {}", password);
+
+    //// open tcp connection
+    let mut client: client::Client;
+
+    match tamari::Client::connect(&address, port) {
+        Ok(c) => client = c,
+        Err(e) => {
+            eprintln!("Failed to connect client with error: {}", e);
+            process::exit(-1);
+        }
+    }
+
+
     // run any subcommands
+    match matches.subcommand_name() {
+        Some("set") => println!("set used"),
+        Some("get") => {
+            println!("get used");
+            client.get("some key");
+        },
+        Some("del") => println!("delete used"),
+        _ => {},
+    }
+
+    match matches.subcommand_matches("set") {
+        Some(set_matches) => {
+            let key = set_matches.value_of("key").unwrap(); //maybe should check for none
+            let value = set_matches.value_of("value").unwrap(); //^
+
+            //delete(key, value);
+        },
+        None => {},
+    }
+
     //   else run input loop
 }
 
