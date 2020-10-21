@@ -110,7 +110,7 @@ fn main() {
     println!("Password {}", password);
 
     //// open tcp connection
-    let mut client: client::Client;
+    let mut client: tamari::Client;
 
     match tamari::Client::connect(&address, port) {
         Ok(c) => client = c,
