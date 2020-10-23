@@ -1,4 +1,5 @@
 use std::fmt;
+use std::error;
 
 const SET_PREFIX: char = '+';
 const GET_PREFIX: char = '=';
@@ -9,10 +10,10 @@ const SUC_PREFIX: char = '$';
 const ERR_PREFIX: char = '!';
 
 #[derive(PartialEq, Debug)]
-pub enum Response<'a> {
+pub enum Response {
     Success,
-    SuccessResult(&'a[u8]),
-    Error(&'a[u8]),
+    SuccessWithResult(Vec<u8>),
+    Error(Vec<u8>),
 }
 
 pub fn parse_response(raw: &[u8]) -> Result<Response, ParseError>{
@@ -26,11 +27,12 @@ pub fn parse_response(raw: &[u8]) -> Result<Response, ParseError>{
                     Err(e) =>  return Err(e),
                 }
 
+              //  let ret_arg: Vec<u8> = ;
 
                 match prefix {
-                    SUC_PREFIX if 0 < args.len() => return Ok(Response::SuccessResult(args[0])),
+                    SUC_PREFIX if 0 < args.len() => return Ok(Response::SuccessWithResult(args[0].to_vec())),
                     SUC_PREFIX => return Ok(Response::Success),
-                    ERR_PREFIX if 0 < args.len() => return Ok(Response::Error(args[0])),
+                    ERR_PREFIX if 0 < args.len() => return Ok(Response::Error(args[0].to_vec())),
                     ERR_PREFIX => return Err(ParseError::MissingArgument),
                     _ => return Err(ParseError::InvalidPrefix),
                 }
@@ -116,14 +118,14 @@ mod tests {
     fn parse_success_response_with_result() {
         let response = b"$3\tfoo\n";
 
-        assert_eq!(parse_response(response).unwrap(), Response::SuccessResult(b"foo"));
+        assert_eq!(parse_response(response).unwrap(), Response::SuccessWithResult(b"foo".to_vec()));
     }
 
     #[test]
     fn parse_error_response() {
         let response = b"!6\tFooBar\n";
 
-        assert_eq!(parse_response(response).unwrap(), Response::Error(b"FooBar"));
+        assert_eq!(parse_response(response).unwrap(), Response::Error(b"FooBar".to_vec()));
     }
 
     #[test]
@@ -178,5 +180,11 @@ impl fmt::Display for ParseError {
             ArgumentSizeTooBig => write!(f, "argument size larger than remaining bytes"),
             InvalidArgumentSize => write!(f, "argument size invalid"),
         }
+    }
+}
+
+impl error::Error for ParseError {
+    fn source(&self) -> Option<&(dyn error::Error + 'static)> {
+       None
     }
 }

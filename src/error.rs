@@ -1,6 +1,7 @@
 use std::io;
 use std::fmt;
 use std::error;
+use crate::parser::ParseError;
 
 #[derive(Debug)]
 pub struct TamariError {
@@ -20,8 +21,7 @@ impl TamariError {
 #[derive(Debug)]
 pub enum ErrorKind {
     IO(io::Error),
-    Parse(String),
-    Server(String),
+    Parse(ParseError),
 }
 
 
@@ -30,7 +30,6 @@ impl fmt::Display for TamariError {
         match self.kind() {
             ErrorKind::IO(ref err) => write!(f, "IO error: {}", err),
             ErrorKind::Parse(ref msg) => write!(f, "Parse error: {}", msg),
-            ErrorKind::Server(ref msg) => write!(f, "Server error: {}", msg),
         }
     }
 }
@@ -38,7 +37,8 @@ impl fmt::Display for TamariError {
 impl error::Error for TamariError {
     fn source(&self) -> Option<&(dyn error::Error + 'static)> {
         match self.kind() {
-            ErrorKind::IO(ref err) => err.source(),
+            ErrorKind::IO(ref err) => Some(err),
+            ErrorKind::Parse(ref err) => Some(err),
             _ => None,
         }
     }
