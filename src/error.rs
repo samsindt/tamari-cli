@@ -20,6 +20,8 @@ impl TamariError {
 #[derive(Debug)]
 pub enum ErrorKind {
     IO(io::Error),
+    Parse(String),
+    Server(String),
 }
 
 
@@ -27,6 +29,8 @@ impl fmt::Display for TamariError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self.kind() {
             ErrorKind::IO(ref err) => write!(f, "IO error: {}", err),
+            ErrorKind::Parse(ref msg) => write!(f, "Parse error: {}", msg),
+            ErrorKind::Server(ref msg) => write!(f, "Server error: {}", msg),
         }
     }
 }

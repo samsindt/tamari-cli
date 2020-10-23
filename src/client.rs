@@ -23,7 +23,6 @@ impl Client {
         request.append(&mut "\t".as_bytes().to_vec());
         request.append(&mut key.to_vec());
         request.append(&mut "\n".as_bytes().to_vec());
-
         self.stream.write(&request)?;
 
         let mut response = [0 as u8; 128];
@@ -31,12 +30,17 @@ impl Client {
             Ok(size) => {
                 if 0 < size {
                     match response[0] as char {
-                        '$' => return Ok(()),
+                        '\n' => return {
+                            println!("success $");
+                            Ok(())
+                        },
                         '!' => {
                             //determine error type from response and return it
+                            println!("failure !");
                         },
                         _ => {
                             //return 'response ambigous' error
+                            println!("ambigous prefix");
                         },
                     }
                 }
