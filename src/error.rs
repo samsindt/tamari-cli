@@ -39,7 +39,6 @@ impl error::Error for TamariError {
         match self.kind() {
             ErrorKind::IO(ref err) => Some(err),
             ErrorKind::Parse(ref err) => Some(err),
-            _ => None,
         }
     }
 }

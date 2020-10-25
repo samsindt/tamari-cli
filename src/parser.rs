@@ -1,10 +1,6 @@
 use std::fmt;
 use std::error;
-
-const SET_PREFIX: char = '+';
-const GET_PREFIX: char = '=';
-const DEL_PREFIX: char = '-';
-const TRA_PREFIX: char = '*';
+use std::str;
 
 const SUC_PREFIX: char = '$';
 const ERR_PREFIX: char = '!';
@@ -14,6 +10,20 @@ pub enum Response {
     Success,
     SuccessWithResult(Vec<u8>),
     Error(Vec<u8>),
+}
+
+impl fmt::Display for Response {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Response::Success => write!(f, "Ok"),
+            Response::SuccessWithResult(res) | Response::Error(res) => {
+                match str::from_utf8(&res) {
+                    Ok(s) => write!(f, "\"{}\"", s),
+                    Err(_) => write!(f, "Recieved non-UTF8 response"),
+                }
+            },
+        }
+    }
 }
 
 pub fn parse_response(raw: &[u8]) -> Result<Response, ParseError>{
@@ -27,20 +37,18 @@ pub fn parse_response(raw: &[u8]) -> Result<Response, ParseError>{
                     Err(e) =>  return Err(e),
                 }
 
-              //  let ret_arg: Vec<u8> = ;
-
                 match prefix {
                     SUC_PREFIX if 0 < args.len() => return Ok(Response::SuccessWithResult(args[0].to_vec())),
                     SUC_PREFIX => return Ok(Response::Success),
                     ERR_PREFIX if 0 < args.len() => return Ok(Response::Error(args[0].to_vec())),
                     ERR_PREFIX => return Err(ParseError::MissingArgument),
-                    _ => return Err(ParseError::InvalidPrefix),
+                    _ => return Err(ParseError::InvalidPrefix(String::from(prefix))),
                 }
             }, 
-            _ => return Err(ParseError::InvalidPrefix),
-        }
+            _ => return Err(ParseError::InvalidPrefix(String::from(raw[0] as char ))),
+        };
     } else {
-        Err(ParseError::InvalidPrefix) // maybe should be EmptyResponse error instead if errors are seperated between responses and requests
+        Err(ParseError::EmptyResponse)
     }
 }
 
@@ -166,19 +174,21 @@ mod tests {
 
 #[derive(Debug, PartialEq)]
 pub enum ParseError {
-    InvalidPrefix,
+    InvalidPrefix(String),
     MissingArgument,
     ArgumentSizeTooBig,
     InvalidArgumentSize,
+    EmptyResponse,
 }
 
 impl fmt::Display for ParseError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            InvalidPrefix => write!(f, "invalid prefix"),
-            MissingArgument => write!(f, "missing argument"),
-            ArgumentSizeTooBig => write!(f, "argument size larger than remaining bytes"),
-            InvalidArgumentSize => write!(f, "argument size invalid"),
+            ParseError::InvalidPrefix(ref pref) => write!(f, "invalid prefix \"{}\"", pref.escape_debug()),
+            ParseError::MissingArgument => write!(f, "missing argument"),
+            ParseError::ArgumentSizeTooBig => write!(f, "argument size larger than remaining bytes"),
+            ParseError::InvalidArgumentSize => write!(f, "argument size invalid"),
+            ParseError::EmptyResponse => write!(f, "response is empty"),
         }
     }
 }

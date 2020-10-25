@@ -1,8 +1,9 @@
 use std::env;
-use std::io::{self, Write};
 use clap::{Arg, App, SubCommand};
-use std::net::{TcpStream};
 use std::process;
+use std::str;
+use std::io;
+use std::io::Write;
 
 use tamari;
 
@@ -40,6 +41,11 @@ fn main() {
                             .long("verbose")
                             .multiple(true)
                             .help("Sets output to verbose"))
+                        .arg(Arg::with_name("debug")
+                            .short("d")
+                            .long("debug")
+                            .multiple(true)
+                            .help("Replaces TCP connection with connection that displays request in protocol format"))
                         .subcommand(SubCommand::with_name("set")
                                     .about("sets the value at the key")
                                     .arg(Arg::with_name("key")
@@ -65,7 +71,8 @@ fn main() {
 
     // check for verbose flag
     let verbose = matches.is_present("verbose");
-    println!("Verbose {}", verbose);
+
+    let debug = matches.is_present("debug");
 
     // check for address
     let address = match matches.value_of("address") {
@@ -75,8 +82,6 @@ fn main() {
             Err(_) => String::from("127.0.0.1"),
         },
     };
-
-    println!("Address {}", address);
 
     // check for port
     let port_str = match matches.value_of("port") {
@@ -96,70 +101,74 @@ fn main() {
         process::exit(-1);
     };
 
-    println!("Port {}", port);
-
     // check for password 
-    let password = match matches.value_of("password") {
+    /*let password = match matches.value_of("password") {
         Some(pw) => String::from(pw),
         None => match env::var("TAMARI_CLI_PASSWORD") {
             Ok(pw) => pw,
             Err(_) => String::new(),
         },
-    };
+    };*/
 
-    println!("Password {}", password);
+    if verbose && !debug {
+        println!("Connecting to server at {}:{} ...", address, port);
+    } else if verbose {
+        println!("Setting up debug connection ...");
+    }
 
-    //// open tcp connection
-    let mut client: tamari::Client;
+    let connection: Box<dyn tamari::Connection>;
 
-    match tamari::Client::connect(&address, port) {
-        Ok(c) => client = c,
-        Err(e) => {
-            eprintln!("Failed to connect client with error: {}", e);
-            process::exit(-1);
+    if !debug {
+        match tamari::TcpConnection::new(&address, port) {
+            Ok(c) => connection = Box::new(c),
+            Err(e) => {
+                eprintln!("Failed to connect to server with error: {}", e);
+                process::exit(-1);
+            }
+        }
+    } else {
+        connection = Box::new(DebugConnection{});
+    }
+
+    
+
+    let mut client = tamari::Client::new(connection);
+
+    if let Some(get_matches) = matches.subcommand_matches("get") {
+        let key = get_matches.value_of("key").unwrap();
+        match client.get(key) {
+            Ok(res) => println!("{}", res),
+            Err(e) => {
+                eprintln!("Get request failed with error: {}", e);
+                process::exit(-1);
+            }
         }
     }
 
-
-    // run any subcommands
-    match matches.subcommand_name() {
-        Some("set") => println!("set used"),
-        Some("get") => {
-            println!("get used");
-            client.get("some key");
-        },
-        Some("del") => println!("delete used"),
-        _ => {},
+   if let Some(set_matches) = matches.subcommand_matches("set") {
+        let key = set_matches.value_of("key").unwrap();
+        let value = set_matches.value_of("value").unwrap();
+        match client.set(key, value) {
+            Ok(res) => println!("{}", res),
+            Err(e) => {
+                eprintln!("Set request failed with error: {}", e);
+                process::exit(-1);
+            }
+        }
     }
 
-    match matches.subcommand_matches("set") {
-        Some(set_matches) => {
-            let key = set_matches.value_of("key").unwrap(); //maybe should check for none
-            let value = set_matches.value_of("value").unwrap(); //^
-
-            //delete(key, value);
-        },
-        None => {},
+    if let Some(del_matches) = matches.subcommand_matches("del") {
+        let key = del_matches.value_of("key").unwrap();
+        match client.delete(key) {
+            Ok(res) =>println!("{}", res),
+            Err(e) => {
+                eprintln!("Delete request failed with error: {}", e);
+                process::exit(-1);
+            }
+        }
     }
 
-    //   else run input loop
-}
-
-   /* let args: Vec<String> = env::args().collect();
-
-    //process args and flags
-
-    //setup tcp connection
-
-
-
-
-
-
-
-    if 1 < args.len() {
-        // run command from args
-    } else {
+    if let None = matches.subcommand_name() {
         let stdin = io::stdin();
 
         loop {
@@ -168,41 +177,81 @@ fn main() {
             let _ = io::stdout().flush();
 
             match stdin.read_line(&mut buffer) {
-                Ok(_) => process_line(&buffer),
+                Ok(_) => process_line(&buffer, &mut client),
                 Err(_) => panic!("There was a proplem reading from stdin"),
             };
         }
     }
-
 }
 
-fn process_line(line: &String) {
+fn process_line(line: &String, client: &mut tamari::Client) {
     let mut statement_args: Vec<&str> = line.split_whitespace().collect();
     
     match statement_args.get(0) {
         Some(command) => match &(command.to_lowercase())[..] {
             "del" => {
                 statement_args.remove(0);
-                handle_delete(&statement_args);
+                if 1 > statement_args.len() {
+                    eprintln!("Insufficient number of arguments: delete requires one argument");
+                    return
+                }
+
+                match client.delete(statement_args[0]) {
+                    Ok(res) => println!("{}", res),
+                    Err(e) => {
+                        eprintln!("Delete request failed with error: {}", e);
+                        process::exit(-1);
+                    }
+                }
             },
-            "set" => println!("set"),
-            "get" => println!("get"),
+            "set" => {
+                statement_args.remove(0);
+                if 2 > statement_args.len() {
+                    eprintln!("Insufficient number of arguments: set requires one argument");
+                    return
+                }
+
+                match client.set(statement_args[0], statement_args[1]) {
+                    Ok(res) => println!("{}", res),
+                    Err(e) => {
+                        eprintln!("Set request failed with error: {}", e);
+                        process::exit(-1);
+                    }
+                }
+            },
+            "get" => {
+                statement_args.remove(0);
+                if 1 > statement_args.len() {
+                    eprintln!("Insufficient number of arguments: get requires one argument");
+                    return
+                }
+
+                match client.get(statement_args[0]) {
+                    Ok(res) => println!("{}", res),
+                    Err(e) => {
+                        eprintln!("Get request failed with error: {}", e);
+                        return
+                    }
+                }
+            },
             _ => (),
         },
         
-        None => println!("No command"),
+        None => (),
     }
 }
 
-fn handle_delete (args: &Vec<&str>) {
+struct DebugConnection {}
 
-    if args.len() < 1 {
-        println!("Insuficient number of arguments: delete requires one argument");
-    } else {
-        let key = &args[0];
-
-        let command = format!("-{}\t{}\n", key.len(), key);
-        println!("{}", command.escape_debug());
-
+impl tamari::Connection for DebugConnection {
+    fn read(&mut self) -> Result<Vec<u8>, tamari::TamariError> {
+        let s = String::from("$\n");
+        Ok(s.into_bytes())
     }
-}*/
+
+    fn write(&mut self, buffer: &[u8]) -> Result<(), tamari::TamariError> {
+        let s = String::from(str::from_utf8(buffer).unwrap());
+        println!("Debug request: {}", s.escape_debug());
+        Ok(())
+    }
+}

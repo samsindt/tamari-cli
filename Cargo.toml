@@ -9,6 +9,7 @@ edition = "2018"
 [dependencies]
 clap = "2.33.3"
 url = "2.1.1"
+mockito = "0.15.1"
 
 [lib]
 name = "tamari"
